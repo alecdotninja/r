@@ -1,6 +1,6 @@
 use core::marker::PhantomData;
 use core::ptr::NonNull;
-use std::any::type_name;
+use core::any::type_name;
 
 use crate::ownership::*;
 
@@ -153,39 +153,40 @@ impl<T: ?Sized> core::ops::DerefMut for R<T, Full> {
     }
 }
 
-impl<T: ?Sized, O: Ownership> std::convert::AsRef<T> for R<T, O> {
+impl<T: ?Sized, O: Ownership> core::convert::AsRef<T> for R<T, O> {
     fn as_ref(&self) -> &T {
         R::as_ref(self)
     }
 }
 
-impl<T: ?Sized, O: Ownership> std::borrow::Borrow<T> for R<T, O> {
+impl<T: ?Sized, O: Ownership> core::borrow::Borrow<T> for R<T, O> {
     fn borrow(&self) -> &T {
         R::as_ref(self)
     }
 }
 
-impl<T: ?Sized + std::fmt::Debug, O: Ownership> std::fmt::Debug for R<T, O> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Debug::fmt(R::as_ref(self), f)
+impl<T: ?Sized + core::fmt::Debug, O: Ownership> core::fmt::Debug for R<T, O> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        R::as_ref(self).fmt(f)
     }
 }
 
-impl<T: ?Sized + std::fmt::Display, O: Ownership> std::fmt::Display for R<T, O> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Display::fmt(R::as_ref(self), f)
+impl<T: ?Sized + core::fmt::Display, O: Ownership> core::fmt::Display for R<T, O> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        R::as_ref(self).fmt(f)
     }
 }
 
-impl<T: ?Sized + std::default::Default> std::default::Default for R<T, Full> {
+impl<T: ?Sized + core::default::Default> core::default::Default for R<T, Full> {
     fn default() -> Self {
-        R::new(std::default::Default::default())
+        R::new(core::default::Default::default())
     }
 }
 
 impl<T: ?Sized + Eq, O: Ownership> PartialEq for R<T, O> {
     fn eq(&self, other: &Self) -> bool {
-        R::ptr_eq(self, other) && PartialEq::eq(R::as_ref(self), R::as_ref(other))
+        R::ptr_eq(self, other) &&
+            R::as_ref(self).eq(R::as_ref(other))
     }
 }
 

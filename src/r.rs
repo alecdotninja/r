@@ -87,6 +87,18 @@ impl <T: ?Sized, N: Ownership> R<T, N> {
         R::ptr(this) == R::ptr(other)
     }
 
+    pub fn as_ref(this: &Self) -> &T {
+        // SAFETY:
+        //  * mut access is only possible when `self: V<T, Full>`, and we have `&self`
+        unsafe { this.ptr.as_ref() }
+    }
+
+    pub fn as_mut(this: &mut Self) -> &mut T {
+        // SAFETY:
+        //  * mut access is only possible when `self: V<T, Full>`, and we have `&mut self`
+        unsafe { this.ptr.as_mut() }
+    }
+
     pub fn join<O: JoinsWith<N>>(this: Self, other: R<T, O>) -> R<T, O::Joined> {
         let ptr = R::leak(this);
 
@@ -129,41 +141,37 @@ impl<T: ?Sized, N: Ownership> core::ops::Deref for R<T, N> {
     type Target = T;
 
     fn deref(&self) -> &T {
-        // SAFETY:
-        //  * mut access is only possible when `self: V<T, Full>`, and we have `&self`
-        unsafe { self.ptr.as_ref() }
+        R::as_ref(self)
     }
 }
 
 impl<T: ?Sized> core::ops::DerefMut for R<T, Full> {
     fn deref_mut(&mut self) -> &mut T {
-        // SAFETY:
-        //  * mut access is only possible when `self: V<T, Full>`, and we have `&mut self`
-        unsafe { self.ptr.as_mut() }
+        R::as_mut(self)
     }
 }
 
 impl<T: ?Sized, N: Ownership> std::convert::AsRef<T> for R<T, N> {
     fn as_ref(&self) -> &T {
-        &**self
+        R::as_ref(self)
     }
 }
 
 impl<T: ?Sized, N: Ownership> std::borrow::Borrow<T> for R<T, N> {
     fn borrow(&self) -> &T {
-        &**self
+        R::as_ref(self)
     }
 }
 
 impl<T: ?Sized + std::fmt::Debug, N: Ownership> std::fmt::Debug for R<T, N> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Debug::fmt(&**self, f)
+        std::fmt::Debug::fmt(R::as_ref(self), f)
     }
 }
 
 impl<T: ?Sized + std::fmt::Display, N: Ownership> std::fmt::Display for R<T, N> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Display::fmt(&**self, f)
+        std::fmt::Display::fmt(R::as_ref(self), f)
     }
 }
 
@@ -175,7 +183,7 @@ impl<T: ?Sized + std::default::Default> std::default::Default for R<T, Full> {
 
 impl<T: ?Sized + Eq, N: Ownership> PartialEq for R<T, N> {
     fn eq(&self, other: &Self) -> bool {
-        R::ptr_eq(self, other) && PartialEq::eq(&**self, &**other)
+        R::ptr_eq(self, other) && PartialEq::eq(R::as_ref(self), R::as_ref(other))
     }
 }
 

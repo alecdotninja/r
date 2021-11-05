@@ -1,12 +1,13 @@
 use core::marker::PhantomData;
 use core::ptr::NonNull;
+use std::any::type_name;
 
-use crate::marker::{Ownership, Full, Partial};
+use crate::ownership::*;
 
 #[repr(transparent)]
-pub struct R<T: ?Sized, N: Ownership = Full> {
+pub struct R<T: ?Sized, O: Ownership = Full> {
     ptr: NonNull<T>,
-    _ownership: PhantomData<N>,
+    _ownership: PhantomData<O>,
 }
 
 impl<T> R<T, Full> {
@@ -41,7 +42,7 @@ impl <T: ?Sized> R<T, Full> {
     }
 }
 
-impl <T: ?Sized, N: Ownership> R<T, N> {
+impl <T: ?Sized, O: Ownership> R<T, O> {
     // SAFETY:
     //  * The `ptr` must come from Box.
     //  * Ownership (`N`) must be correct.
@@ -62,33 +63,34 @@ impl <T: ?Sized, N: Ownership> R<T, N> {
         ptr
     }
 
-    pub fn split(this: Self) -> (R<T, Partial<N>>, R<T, Partial<N>>) {
-        let ptr = Self::leak(this);
+    pub fn split(this: Self) -> (R<T, O::Split>, R<T, O::Split>) {
+        let ptr = R::leak(this);
 
         // SAFETY:
         //  * `ptr` comes from `self` which already satisfied requirements.
         //  * The ownership (`N`) is correct.
         unsafe {
             (
-                R::<T, Partial<N>>::from_raw(ptr),
-                R::<T, Partial<N>>::from_raw(ptr),
+                R::from_raw(ptr),
+                R::from_raw(ptr),
             )
         }
     }
 }
 
-impl <T: ?Sized, N: Ownership> R<T, Partial<N>> {
-    pub fn join(this: Self, other: Self) -> R<T, N> {
-        let ptr = Self::leak(this);
+impl <T: ?Sized, N: Ownership> R<T, N> {
+    pub fn join<O: JoinsWith<N>>(this: Self, other: R<T, O>) -> R<T, O::Joined> {
+        let ptr = R::leak(this);
 
         assert!(
-            ptr == Self::leak(other),
-            "Attempted to join pointers to different targets",
+            ptr == R::leak(other),
+            "Cannot join pointers to different `{}`",
+            type_name::<T>(),
         );
 
         // SAFETY:
         //  * `ptr` comes from `self` which already satisfied requirements.
-        //  * The ownership (`N`) in the return type is correct.
+        //  * The ownership (`O::Into`) in the return type is correct.
         unsafe {
             R::from_raw(ptr)
         }
@@ -107,7 +109,9 @@ impl<T: ?Sized, N: Ownership> Drop for R<T, N> {
         } else {
             debug_assert!(
                 false,
-                "You are using `R` pointers in a way that leaks memory. Join them back to full ownership before dropping or forget them.",
+                "Dropping `R<_, {}>` here would leak a `{}` because it does not have `Full` ownership.",
+                type_name::<N>(),
+                type_name::<T>(),
             );
         }
     }

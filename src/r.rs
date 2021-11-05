@@ -26,7 +26,7 @@ impl <T: ?Sized> R<T, Full> {
 
         // SAFETY:
         //  * The `ptr` comes from Box.
-        //  * The `ptr` is unique, and ownership (`N`) is `Full`.
+        //  * The `ptr` is unique, and ownership is `Full`.
         unsafe {
             Self::from_raw(ptr)
         }
@@ -37,7 +37,7 @@ impl <T: ?Sized> R<T, Full> {
 
         // SAFETY:
         //  * The `ptr` comes from Box
-        //  * The `ptr` is unique because ownership (`N`) is `Full`
+        //  * The `ptr` is unique because ownership is `Full`
         unsafe { Box::from_raw(ptr) }
     }
 }
@@ -45,7 +45,7 @@ impl <T: ?Sized> R<T, Full> {
 impl <T: ?Sized, O: Ownership> R<T, O> {
     // SAFETY:
     //  * The `ptr` must come from Box.
-    //  * Ownership (`N`) must be correct.
+    //  * Ownership (`O`) must be correct.
     pub unsafe fn from_raw(ptr: *mut T) -> Self {
         // SAFETY:
         //  * `ptr` is from Box which cannot be null.
@@ -68,7 +68,7 @@ impl <T: ?Sized, O: Ownership> R<T, O> {
 
         // SAFETY:
         //  * `ptr` comes from `self` which already satisfied requirements.
-        //  * The ownership (`N`) is correct.
+        //  * The ownership (`O`) is correct.
         unsafe {
             (
                 R::from_raw(ptr),
@@ -89,13 +89,13 @@ impl <T: ?Sized, N: Ownership> R<T, N> {
 
     pub fn as_ref(this: &Self) -> &T {
         // SAFETY:
-        //  * mut access is only possible when `self: V<T, Full>`, and we have `&self`
+        //  * mut access is only possible when `this: R<T, Full>`, and we have `&self`
         unsafe { this.ptr.as_ref() }
     }
 
     pub fn as_mut(this: &mut Self) -> &mut T {
         // SAFETY:
-        //  * mut access is only possible when `self: V<T, Full>`, and we have `&mut self`
+        //  * mut access is only possible when `this: R<T, Full>`, and we have `&mut self`
         unsafe { this.ptr.as_mut() }
     }
 
@@ -110,34 +110,36 @@ impl <T: ?Sized, N: Ownership> R<T, N> {
 
         // SAFETY:
         //  * `ptr` comes from `self` which already satisfied requirements.
-        //  * The ownership (`O::Into`) in the return type is correct.
+        //  * The ownership (`O::Joined`) in the return type is correct.
         unsafe {
             R::from_raw(ptr)
         }
     }
 }
 
-impl<T: ?Sized, N: Ownership> Drop for R<T, N> {
+impl<T: ?Sized, O: Ownership> Drop for R<T, O> {
     fn drop(&mut self) {
-        if N::IS_FULL {
+        if O::IS_FULL {
             let ptr = R::ptr(self);
 
             // SAFETY:
             //  * The `ptr` comes from Box
-            //  * The `ptr` is unique because ownership (`N`) is `Full`
-            drop(unsafe { Box::from_raw(ptr) });
+            //  * The `ptr` is unique because ownership (`O`) is `Full`
+            let value = unsafe { Box::from_raw(ptr) };
+
+            drop(value);
         } else {
             debug_assert!(
                 false,
                 "Dropping `R<_, {}>` here would leak a `{}` because it does not have `Full` ownership.",
-                type_name::<N>(),
+                type_name::<O>(),
                 type_name::<T>(),
             );
         }
     }
 }
 
-impl<T: ?Sized, N: Ownership> core::ops::Deref for R<T, N> {
+impl<T: ?Sized, O: Ownership> core::ops::Deref for R<T, O> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -151,25 +153,25 @@ impl<T: ?Sized> core::ops::DerefMut for R<T, Full> {
     }
 }
 
-impl<T: ?Sized, N: Ownership> std::convert::AsRef<T> for R<T, N> {
+impl<T: ?Sized, O: Ownership> std::convert::AsRef<T> for R<T, O> {
     fn as_ref(&self) -> &T {
         R::as_ref(self)
     }
 }
 
-impl<T: ?Sized, N: Ownership> std::borrow::Borrow<T> for R<T, N> {
+impl<T: ?Sized, O: Ownership> std::borrow::Borrow<T> for R<T, O> {
     fn borrow(&self) -> &T {
         R::as_ref(self)
     }
 }
 
-impl<T: ?Sized + std::fmt::Debug, N: Ownership> std::fmt::Debug for R<T, N> {
+impl<T: ?Sized + std::fmt::Debug, O: Ownership> std::fmt::Debug for R<T, O> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         std::fmt::Debug::fmt(R::as_ref(self), f)
     }
 }
 
-impl<T: ?Sized + std::fmt::Display, N: Ownership> std::fmt::Display for R<T, N> {
+impl<T: ?Sized + std::fmt::Display, O: Ownership> std::fmt::Display for R<T, O> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         std::fmt::Display::fmt(R::as_ref(self), f)
     }
@@ -181,13 +183,13 @@ impl<T: ?Sized + std::default::Default> std::default::Default for R<T, Full> {
     }
 }
 
-impl<T: ?Sized + Eq, N: Ownership> PartialEq for R<T, N> {
+impl<T: ?Sized + Eq, O: Ownership> PartialEq for R<T, O> {
     fn eq(&self, other: &Self) -> bool {
         R::ptr_eq(self, other) && PartialEq::eq(R::as_ref(self), R::as_ref(other))
     }
 }
 
-impl<T: ?Sized + Eq, N: Ownership> Eq for R<T, N> {}
+impl<T: ?Sized + Eq, O: Ownership> Eq for R<T, O> {}
 
 impl<T> From<T> for R<T, Full> {
     fn from(value: T) -> R<T, Full> {

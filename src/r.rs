@@ -58,7 +58,7 @@ impl <T: ?Sized, O: Ownership> R<T, O> {
     }
 
     pub fn leak(this: Self) -> *mut T {
-        let ptr = this.ptr.as_ptr();
+        let ptr = R::ptr(&this);
         core::mem::forget(this);
         ptr
     }
@@ -79,6 +79,14 @@ impl <T: ?Sized, O: Ownership> R<T, O> {
 }
 
 impl <T: ?Sized, N: Ownership> R<T, N> {
+    fn ptr(this: &Self) -> *mut T {
+        this.ptr.as_ptr()
+    }
+
+    pub fn ptr_eq<O: Ownership>(this: &Self, other: &R<T, O>) -> bool {
+        R::ptr(this) == R::ptr(other)
+    }
+
     pub fn join<O: JoinsWith<N>>(this: Self, other: R<T, O>) -> R<T, O::Joined> {
         let ptr = R::leak(this);
 
@@ -100,7 +108,7 @@ impl <T: ?Sized, N: Ownership> R<T, N> {
 impl<T: ?Sized, N: Ownership> Drop for R<T, N> {
     fn drop(&mut self) {
         if N::IS_FULL {
-            let ptr = self.ptr.as_ptr();
+            let ptr = R::ptr(self);
 
             // SAFETY:
             //  * The `ptr` comes from Box
@@ -165,11 +173,13 @@ impl<T: ?Sized + std::default::Default> std::default::Default for R<T, Full> {
     }
 }
 
-impl<T: ?Sized + PartialEq, N: Ownership> PartialEq for R<T, N> {
+impl<T: ?Sized + Eq, N: Ownership> PartialEq for R<T, N> {
     fn eq(&self, other: &Self) -> bool {
-        PartialEq::eq(&**self, &**other)
+        R::ptr_eq(self, other) && PartialEq::eq(&**self, &**other)
     }
 }
+
+impl<T: ?Sized + Eq, N: Ownership> Eq for R<T, N> {}
 
 impl<T> From<T> for R<T, Full> {
     fn from(value: T) -> R<T, Full> {
@@ -182,8 +192,6 @@ impl<T: ?Sized> From<Box<T>> for R<T, Full> {
         R::from_box(value)
     }
 }
-
-impl<T: ?Sized + Eq> Eq for R<T> {}
 
 unsafe impl<T: ?Sized + Sync + Send, N: Ownership> Sync for R<T, N> {}
 unsafe impl<T: ?Sized + Sync + Send, N: Ownership> Send for R<T, N> {}

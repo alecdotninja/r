@@ -1,8 +1,8 @@
+use core::any::type_name;
 use core::marker::PhantomData;
 use core::ptr::NonNull;
-use core::any::type_name;
 
-use crate::prat::{Ownership, Full, JoinsWith, CanSplit};
+use crate::ownership::{CanSplit, Full, JoinsWith, Ownership};
 
 #[repr(transparent)]
 pub struct R<T: ?Sized, O: Ownership = Full> {
@@ -20,16 +20,14 @@ impl<T> R<T, Full> {
     }
 }
 
-impl <T: ?Sized> R<T, Full> {
+impl<T: ?Sized> R<T, Full> {
     pub fn from_box(value: Box<T>) -> Self {
         let ptr = Box::into_raw(value);
 
         // SAFETY:
         //  * The `ptr` comes from Box.
         //  * The `ptr` is unique, and ownership is `Full`.
-        unsafe {
-            Self::from_raw(ptr)
-        }
+        unsafe { Self::from_raw(ptr) }
     }
 
     pub fn into_box(this: Self) -> Box<T> {
@@ -48,7 +46,7 @@ impl <T: ?Sized> R<T, Full> {
     }
 }
 
-impl <T: ?Sized, O: Ownership> R<T, O> {
+impl<T: ?Sized, O: Ownership> R<T, O> {
     // SAFETY:
     //  * The `ptr` must come from Box.
     //  * Ownership (`O`) must be correct.
@@ -64,17 +62,17 @@ impl <T: ?Sized, O: Ownership> R<T, O> {
     }
 
     pub fn leak(this: Self) -> *mut T {
-        let ptr = R::ptr(&this);
+        let ptr = R::as_ptr(&this);
         core::mem::forget(this);
         ptr
     }
 
-    fn ptr(this: &Self) -> *mut T {
+    fn as_ptr(this: &Self) -> *mut T {
         this.ptr.as_ptr()
     }
 
     pub fn ptr_eq<P: Ownership>(this: &Self, other: &R<T, P>) -> bool {
-        R::ptr(this) == R::ptr(other)
+        R::as_ptr(this) == R::as_ptr(other)
     }
 
     pub fn as_ref(this: &Self) -> &T {
@@ -84,23 +82,20 @@ impl <T: ?Sized, O: Ownership> R<T, O> {
     }
 
     pub fn split(this: Self) -> (R<T, O::Split>, R<T, O::Split>)
-        where O: CanSplit
+    where
+        O: CanSplit,
     {
         let ptr = R::leak(this);
 
         // SAFETY:
         //  * `ptr` comes from `self` which already satisfied requirements.
         //  * The ownership (`O`) is correct.
-        unsafe {
-            (
-                R::from_raw(ptr),
-                R::from_raw(ptr),
-            )
-        }
+        unsafe { (R::from_raw(ptr), R::from_raw(ptr)) }
     }
 
     pub fn join<P>(this: Self, other: R<T, P>) -> R<T, P::Joined>
-        where P: JoinsWith<O>
+    where
+        P: JoinsWith<O>,
     {
         let ptr = R::leak(this);
 
@@ -113,17 +108,14 @@ impl <T: ?Sized, O: Ownership> R<T, O> {
         // SAFETY:
         //  * `ptr` comes from `self` which already satisfied requirements.
         //  * The ownership (`O::Joined`) in the return type is correct.
-        unsafe {
-            R::from_raw(ptr)
-        }
+        unsafe { R::from_raw(ptr) }
     }
 }
-
 
 impl<T: ?Sized, O: Ownership> Drop for R<T, O> {
     fn drop(&mut self) {
         if O::IS_FULL {
-            let ptr = R::ptr(self);
+            let ptr = R::as_ptr(self);
 
             // SAFETY:
             //  * The `ptr` comes from Box
@@ -188,8 +180,7 @@ impl<T: ?Sized + core::default::Default> core::default::Default for R<T, Full> {
 
 impl<T: ?Sized + Eq, O: Ownership> PartialEq for R<T, O> {
     fn eq(&self, other: &Self) -> bool {
-        R::ptr_eq(self, other) &&
-            R::as_ref(self).eq(R::as_ref(other))
+        R::ptr_eq(self, other) && R::as_ref(self).eq(R::as_ref(other))
     }
 }
 

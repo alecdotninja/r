@@ -1,13 +1,17 @@
 use core::ops::{Add, Div, Mul};
 
-use typenum::{op, Gcd, NonZero, Unsigned, U1, U2};
+use typenum::consts::*;
+use typenum::{op, Gcd, NonZero, Unsigned};
 
 pub struct Fraction<P, Q>(P, Q)
 where
     P: Unsigned + NonZero,
     Q: Unsigned + NonZero;
 
-pub type Full = Fraction<U1, U1>;
+pub type Full       = Fraction<U1, U1>;
+pub type Half       = Fraction<U1, U2>;
+pub type Quarter    = Fraction<U1, U4>;
+pub type Eighth     = Fraction<U1, U8>;
 
 pub unsafe trait Ownership {
     const IS_FULL: bool;

@@ -1,4 +1,3 @@
-use core::any::type_name;
 use core::marker::PhantomData;
 use core::ptr::NonNull;
 
@@ -67,7 +66,7 @@ impl<T: ?Sized, O: Ownership> R<T, O> {
         ptr
     }
 
-    fn as_ptr(this: &Self) -> *mut T {
+    pub fn as_ptr(this: &Self) -> *mut T {
         this.ptr.as_ptr()
     }
 
@@ -101,8 +100,7 @@ impl<T: ?Sized, O: Ownership> R<T, O> {
 
         assert!(
             ptr == R::leak(other),
-            "Cannot join pointers to different `{}`",
-            type_name::<T>(),
+            "Cannot join pointers to different values",
         );
 
         // SAFETY:
@@ -126,9 +124,7 @@ impl<T: ?Sized, O: Ownership> Drop for R<T, O> {
         } else {
             debug_assert!(
                 false,
-                "Dropping `R<_, {}>` here would leak a `{}` because it does not have `Full` ownership.",
-                type_name::<O>(),
-                type_name::<T>(),
+                "Dropping `R` pointer here leaks the value because it does not have full ownership.",
             );
         }
     }

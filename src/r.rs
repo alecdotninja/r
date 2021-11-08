@@ -2,7 +2,7 @@ use core::marker::PhantomData;
 use core::ptr::NonNull;
 use core::any::type_name;
 
-use crate::ownership::*;
+use crate::prat::{Ownership, Full, JoinsWith, CanSplit};
 
 #[repr(transparent)]
 pub struct R<T: ?Sized, O: Ownership = Full> {
@@ -40,6 +40,12 @@ impl <T: ?Sized> R<T, Full> {
         //  * The `ptr` is unique because ownership is `Full`
         unsafe { Box::from_raw(ptr) }
     }
+
+    pub fn as_mut(this: &mut Self) -> &mut T {
+        // SAFETY:
+        //  * mut access is only possible when `this: R<T, Full>`, and we have `&mut self`
+        unsafe { this.ptr.as_mut() }
+    }
 }
 
 impl <T: ?Sized, O: Ownership> R<T, O> {
@@ -63,7 +69,23 @@ impl <T: ?Sized, O: Ownership> R<T, O> {
         ptr
     }
 
-    pub fn split(this: Self) -> (R<T, O::Split>, R<T, O::Split>) {
+    fn ptr(this: &Self) -> *mut T {
+        this.ptr.as_ptr()
+    }
+
+    pub fn ptr_eq<P: Ownership>(this: &Self, other: &R<T, P>) -> bool {
+        R::ptr(this) == R::ptr(other)
+    }
+
+    pub fn as_ref(this: &Self) -> &T {
+        // SAFETY:
+        //  * mut access is only possible when `this: R<T, Full>`, and we have `&self`
+        unsafe { this.ptr.as_ref() }
+    }
+
+    pub fn split(this: Self) -> (R<T, O::Split>, R<T, O::Split>)
+        where O: CanSplit
+    {
         let ptr = R::leak(this);
 
         // SAFETY:
@@ -76,30 +98,10 @@ impl <T: ?Sized, O: Ownership> R<T, O> {
             )
         }
     }
-}
 
-impl <T: ?Sized, N: Ownership> R<T, N> {
-    fn ptr(this: &Self) -> *mut T {
-        this.ptr.as_ptr()
-    }
-
-    pub fn ptr_eq<O: Ownership>(this: &Self, other: &R<T, O>) -> bool {
-        R::ptr(this) == R::ptr(other)
-    }
-
-    pub fn as_ref(this: &Self) -> &T {
-        // SAFETY:
-        //  * mut access is only possible when `this: R<T, Full>`, and we have `&self`
-        unsafe { this.ptr.as_ref() }
-    }
-
-    pub fn as_mut(this: &mut Self) -> &mut T {
-        // SAFETY:
-        //  * mut access is only possible when `this: R<T, Full>`, and we have `&mut self`
-        unsafe { this.ptr.as_mut() }
-    }
-
-    pub fn join<O: JoinsWith<N>>(this: Self, other: R<T, O>) -> R<T, O::Joined> {
+    pub fn join<P>(this: Self, other: R<T, P>) -> R<T, P::Joined>
+        where P: JoinsWith<O>
+    {
         let ptr = R::leak(this);
 
         assert!(
@@ -116,6 +118,7 @@ impl <T: ?Sized, N: Ownership> R<T, N> {
         }
     }
 }
+
 
 impl<T: ?Sized, O: Ownership> Drop for R<T, O> {
     fn drop(&mut self) {
@@ -204,8 +207,8 @@ impl<T: ?Sized> From<Box<T>> for R<T, Full> {
     }
 }
 
-unsafe impl<T: ?Sized + Sync + Send, N: Ownership> Sync for R<T, N> {}
-unsafe impl<T: ?Sized + Sync + Send, N: Ownership> Send for R<T, N> {}
+unsafe impl<T: ?Sized + Sync + Send, O: Ownership> Sync for R<T, O> {}
+unsafe impl<T: ?Sized + Sync + Send, O: Ownership> Send for R<T, O> {}
 
 #[cfg(test)]
 mod tests {
@@ -225,6 +228,19 @@ mod tests {
         let v = R::join(x, y);
 
         assert_eq!(*v, 7);
+    }
+
+    #[test]
+    fn join_in_any_oreder() {
+        let full = R::new(7);
+
+        let (half_1, half_2) = R::split(full);
+        let (quarter_1, quarter_2) = R::split(half_2);
+
+        let three_quarters = R::join(half_1, quarter_1);
+        let full = R::join(three_quarters, quarter_2);
+
+        assert_eq!(R::into_inner(full), 7);
     }
 
     #[test]

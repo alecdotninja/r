@@ -8,20 +8,26 @@ pub type Ownership = u128;
 
 pub const FULL: Ownership = 0;
 
-const fn join(a: Ownership, b: Ownership) -> Ownership {
-    a.wrapping_add(b)
-}
-
 const fn split(input: Ownership) -> Ownership {
     if 0 == input {
-        return (Ownership::MAX / 2).next_power_of_two();
+        return 2u128.pow(127);
     }
 
     if 0 != input % 2 {
-        panic!("ownership cannot be further split");
+        panic!("ownership can only be split 128 times");
     }
 
     input / 2
+}
+
+const fn join(a: Ownership, b: Ownership) -> Ownership {
+    let output = a.wrapping_add(b);
+
+    if output != 0 && (output < a || output < b) {
+        panic!("invalid ownership join");
+    }
+
+    output
 }
 
 #[repr(transparent)]
@@ -104,7 +110,7 @@ impl<T: ?Sized, const O: Ownership> R<T, O> {
 
         // SAFETY:
         //  * `ptr` comes from `self` which already satisfied requirements.
-        //  * The ownership in the return type (`O + P`) is correct.
+        //  * The ownership in the return type (`join(O, P)`) is correct.
         unsafe { R::from_raw(ptr) }
     }
 }

@@ -6,7 +6,23 @@ use core::ptr::NonNull;
 
 pub type Ownership = u128;
 
-pub const FULL: Ownership = 2_u128.pow(127);
+pub const FULL: Ownership = 0;
+
+const fn join(a: Ownership, b: Ownership) -> Ownership {
+    a.wrapping_add(b)
+}
+
+const fn split(input: Ownership) -> Ownership {
+    if 0 == input {
+        return (Ownership::MAX / 2).next_power_of_two();
+    }
+
+    if 0 != input % 2 {
+        panic!("ownership cannot be further split");
+    }
+
+    input / 2
+}
 
 #[repr(transparent)]
 pub struct R<T: ?Sized, const O: Ownership> {
@@ -78,7 +94,7 @@ impl<T: ?Sized, const O: Ownership> R<T, O> {
         unsafe { (R::from_raw(ptr), R::from_raw(ptr)) }
     }
 
-    pub fn join<const P: Ownership>(r: Self, other: R<T, P>) -> R<T, { O + P }> {
+    pub fn join<const P: Ownership>(r: Self, other: R<T, P>) -> R<T, { join(O, P) }> {
         let ptr = R::leak(r);
 
         assert!(
@@ -91,14 +107,6 @@ impl<T: ?Sized, const O: Ownership> R<T, O> {
         //  * The ownership in the return type (`O + P`) is correct.
         unsafe { R::from_raw(ptr) }
     }
-}
-
-const fn split(input: Ownership) -> Ownership {
-    if input % 2 != 0 {
-        panic!("ownership cannot be further split");
-    }
-
-    input / 2
 }
 
 impl<T: ?Sized, const O: Ownership> Drop for R<T, O> {

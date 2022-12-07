@@ -1,16 +1,14 @@
-use core::marker::PhantomData;
-use core::ptr::NonNull;
 use core::fmt;
+use core::ptr::NonNull;
 
-use crate::ownership::{CanSplit, Full, JoinsWith, Ownership};
+use crate::ownership::{join, split, Ownership, FULL};
 
 #[repr(transparent)]
-pub struct R<T: ?Sized, O: Ownership = Full> {
+pub struct R<T: ?Sized, const O: Ownership> {
     ptr: NonNull<T>,
-    _ownership: PhantomData<O>,
 }
 
-impl<T> R<T, Full> {
+impl<T> R<T, FULL> {
     pub fn new(value: T) -> Self {
         Self::from_box(Box::new(value))
     }
@@ -20,13 +18,13 @@ impl<T> R<T, Full> {
     }
 }
 
-impl<T: ?Sized> R<T, Full> {
+impl<T: ?Sized> R<T, FULL> {
     pub fn from_box(value: Box<T>) -> Self {
         let ptr = Box::into_raw(value);
 
         // SAFETY:
         //  * The `ptr` comes from `Box`.
-        //  * The `ptr` is unique, and ownership is `Full`.
+        //  * The `ptr` is unique, and ownership is `FULL`.
         unsafe { Self::from_raw(ptr) }
     }
 
@@ -35,19 +33,12 @@ impl<T: ?Sized> R<T, Full> {
 
         // SAFETY:
         //  * The `ptr` comes from Box
-        //  * The `ptr` is unique because ownership is `Full`
+        //  * The `ptr` is unique because ownership is `FULL`
         unsafe { Box::from_raw(ptr) }
-    }
-
-    pub fn as_mut(r: &mut Self) -> &mut T {
-        // SAFETY:
-        //  * `r.ptr` is unique because ownership is `Full`.
-        //  * `r` will be borrowed for the lifetime of the mut reference. 
-        unsafe { r.ptr.as_mut() }
     }
 }
 
-impl<T: ?Sized, O: Ownership> R<T, O> {
+impl<T: ?Sized, const O: Ownership> R<T, O> {
     // SAFETY:
     //  * The `ptr` must come from Box.
     //  * Ownership (`O`) must be correct.
@@ -56,10 +47,7 @@ impl<T: ?Sized, O: Ownership> R<T, O> {
         //  * `ptr` is from Box which cannot be null.
         let ptr = unsafe { NonNull::new_unchecked(ptr) };
 
-        R {
-            ptr,
-            _ownership: PhantomData,
-        }
+        R { ptr }
     }
 
     pub fn leak(r: Self) -> *mut T {
@@ -72,38 +60,20 @@ impl<T: ?Sized, O: Ownership> R<T, O> {
         r.ptr.as_ptr()
     }
 
-    pub fn ptr_eq<P: Ownership>(r: &Self, other: &R<T, P>) -> bool {
+    pub fn ptr_eq<const P: Ownership>(r: &Self, other: &R<T, P>) -> bool {
         R::as_ptr(r) == R::as_ptr(other)
     }
 
-    pub fn as_ref(r: &Self) -> &T {
-        // SAFETY:
-        //  * If ownership is Full, then the *only* way to get a mut ref to the
-        //      underlying data is via `r`, but that will not be possible since
-        //      this method borrows `r` for the lifetime of ref to the data. On
-        //      the other hand, if ownership is *not* Full, then there is no
-        //      way to get a mut ref to the underlying data. In either case,
-        //      there is no way to get a mut ref to the data while this ref is
-        //      valid.
-        unsafe { r.ptr.as_ref() }
-    }
-
-    pub fn split(r: Self) -> (R<T, O::Split>, R<T, O::Split>)
-    where
-        O: CanSplit,
-    {
+    pub fn split(r: Self) -> (R<T, { split(O) }>, R<T, { split(O) }>) {
         let ptr = R::leak(r);
 
         // SAFETY:
         //  * `ptr` comes from `self` which already satisfied requirements.
-        //  * The ownership (`O`) is correct.
+        //  * The ownership in the return type (`split(O)`) is correct.
         unsafe { (R::from_raw(ptr), R::from_raw(ptr)) }
     }
 
-    pub fn join<P>(r: Self, other: R<T, P>) -> R<T, P::Joined>
-    where
-        P: JoinsWith<O>,
-    {
+    pub fn join<const P: Ownership>(r: Self, other: R<T, P>) -> R<T, { join(O, P) }> {
         let ptr = R::leak(r);
 
         assert!(
@@ -113,88 +83,105 @@ impl<T: ?Sized, O: Ownership> R<T, O> {
 
         // SAFETY:
         //  * `ptr` comes from `self` which already satisfied requirements.
-        //  * The ownership (`O::Joined`) in the return type is correct.
+        //  * The ownership in the return type (`join(O, P)`) is correct.
         unsafe { R::from_raw(ptr) }
     }
 }
 
-impl<T: ?Sized, O: Ownership> Drop for R<T, O> {
+impl<T: ?Sized, const O: Ownership> Drop for R<T, O> {
     fn drop(&mut self) {
-        if !O::IS_FULL {
+        if FULL != O {
             return;
         }
 
         let ptr = R::as_ptr(self);
 
         // SAFETY:
-        //  * The `ptr` comes from Box
-        //  * The `ptr` is unique because ownership (`O`) is `Full`
+        //  * The `ptr` comes from Box.
+        //  * The `ptr` is unique because ownership (`O`) is `FULL`.
         let value = unsafe { Box::from_raw(ptr) };
 
         drop(value);
     }
 }
 
-impl<T: ?Sized, O: Ownership> core::ops::Deref for R<T, O> {
+impl<T: ?Sized, const O: Ownership> AsRef<T> for R<T, O> {
+    fn as_ref(&self) -> &T {
+        // SAFETY:
+        //  * If ownership is FULL, then the *only* way to get a mut ref to the
+        //      underlying data is via `r`, but that will not be possible since
+        //      this method borrows `r` for the lifetime of ref to the data. On
+        //      the other hand, if ownership is *not* FULL, then there is no
+        //      way to get a mut ref to the underlying data. In either case,
+        //      there is no way to get a mut ref to the data while this ref is
+        //      valid.
+        unsafe { self.ptr.as_ref() }
+    }
+}
+
+impl<T: ?Sized> AsMut<T> for R<T, FULL> {
+    fn as_mut(&mut self) -> &mut T {
+        // SAFETY:
+        //  * `self.ptr` is unique because ownership is `FULL`.
+        //  * `self` will be borrowed for the lifetime of the mut reference.
+        unsafe { self.ptr.as_mut() }
+    }
+}
+
+impl<T: ?Sized, const O: Ownership> core::ops::Deref for R<T, O> {
     type Target = T;
 
     fn deref(&self) -> &T {
-        R::as_ref(self)
+        self.as_ref()
     }
 }
 
-impl<T: ?Sized> core::ops::DerefMut for R<T, Full> {
+impl<T: ?Sized> core::ops::DerefMut for R<T, FULL> {
     fn deref_mut(&mut self) -> &mut T {
-        R::as_mut(self)
+        self.as_mut()
     }
 }
 
-impl<T: ?Sized, O: Ownership> AsRef<T> for R<T, O> {
-    fn as_ref(&self) -> &T {
-        R::as_ref(self)
-    }
-}
-
-impl<T: ?Sized + fmt::Debug, O: Ownership> fmt::Debug for R<T, O> {
+impl<T: ?Sized + fmt::Debug, const O: Ownership> fmt::Debug for R<T, O> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         (**self).fmt(f)
     }
 }
 
-impl<T: ?Sized + fmt::Display, O: Ownership> fmt::Display for R<T, O> {
+impl<T: ?Sized + fmt::Display, const O: Ownership> fmt::Display for R<T, O> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         (**self).fmt(f)
     }
 }
 
-impl<T: ?Sized + Default> Default for R<T, Full> {
+impl<T: ?Sized + Default> Default for R<T, FULL> {
     fn default() -> Self {
         R::new(Default::default())
     }
 }
 
-impl<T: ?Sized + Eq, O: Ownership> PartialEq for R<T, O> {
+impl<T: ?Sized + Eq, const O: Ownership> PartialEq for R<T, O> {
     fn eq(&self, other: &Self) -> bool {
         R::ptr_eq(self, other) && PartialEq::eq(&**self, &**other)
     }
 }
 
-impl<T: ?Sized + Eq, O: Ownership> Eq for R<T, O> {}
+impl<T: ?Sized + Eq, const O: Ownership> Eq for R<T, O> {}
 
-impl<T> From<T> for R<T, Full> {
-    fn from(value: T) -> R<T, Full> {
+impl<T> From<T> for R<T, { FULL }> {
+    fn from(value: T) -> Self {
         R::new(value)
     }
 }
 
-impl<T: ?Sized> From<Box<T>> for R<T, Full> {
-    fn from(value: Box<T>) -> R<T, Full> {
+impl<T: ?Sized> From<Box<T>> for R<T, FULL> {
+    fn from(value: Box<T>) -> Self {
         R::from_box(value)
     }
 }
 
-unsafe impl<T: ?Sized + Sync + Send, O: Ownership> Sync for R<T, O> {}
-unsafe impl<T: ?Sized + Sync + Send, O: Ownership> Send for R<T, O> {}
+unsafe impl<T: ?Sized + Sync + Send, const O: Ownership> Sync for R<T, O> {}
+unsafe impl<T: ?Sized + Sync + Send, const O: Ownership> Send for R<T, O> {}
 
 #[cfg(test)]
 mod tests {

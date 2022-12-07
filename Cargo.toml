@@ -2,6 +2,3 @@
 name = "r"
 version = "0.1.0"
 edition = "2021"
-
-[dependencies]
-gcd = "2.2.0"

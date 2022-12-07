@@ -195,7 +195,7 @@ impl<T: ?Sized + Eq, const O: Ownership> PartialEq for R<T, O> {
 
 impl<T: ?Sized + Eq, const O: Ownership> Eq for R<T, O> {}
 
-impl<T> From<T> for R<T, { FULL }> {
+impl<T> From<T> for R<T, FULL> {
     fn from(value: T) -> Self {
         R::new(value)
     }

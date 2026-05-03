@@ -17,6 +17,7 @@
 #![feature(generic_const_exprs)]
 
 use core::fmt;
+use core::marker::PhantomData;
 use core::ptr::NonNull;
 
 /// A const-generic ownership marker.
@@ -70,6 +71,7 @@ pub const fn join(a: Ownership, b: Ownership) -> Ownership {
 #[repr(transparent)]
 pub struct R<T: ?Sized, const O: Ownership> {
     ptr: NonNull<T>,
+    _marker: PhantomData<T>,
 }
 
 impl<T> R<T, FULL> {
@@ -121,7 +123,10 @@ impl<T: ?Sized, const O: Ownership> R<T, O> {
         //  * `ptr` is from Box which cannot be null.
         let ptr = unsafe { NonNull::new_unchecked(ptr) };
 
-        R { ptr }
+        R {
+            ptr,
+            _marker: PhantomData,
+        }
     }
 
     /// Consumes a handle without updating ownership and returns its raw pointer.
@@ -290,7 +295,7 @@ impl<T: ?Sized> From<Box<T>> for R<T, FULL> {
     }
 }
 
-unsafe impl<T: ?Sized + Sync + Send, const O: Ownership> Sync for R<T, O> {}
+unsafe impl<T: ?Sized + Sync, const O: Ownership> Sync for R<T, O> {}
 unsafe impl<T: ?Sized + Sync + Send, const O: Ownership> Send for R<T, O> {}
 
 #[cfg(test)]
